@@ -23,14 +23,17 @@ ANIMATIONS = {
     "water": "https://lottie.host/9f5033c7-3135-4309-883a-48d6139c2357/3nOqD2S0vX.json",
     "food": "https://lottie.host/62635904-8994-47a7-897d-606d1531e842/IEnf3m9u1h.json",
     "default": "https://lottie.host/91106093-f111-477d-810a-706f85108f97/Bsc7H0XQkR.json",
-    "login": "https://lottie.host/4b82d733-4050-4d51-aa3f-8df95cbdf356/M6q3s7Z0g2.json" # أنيميشن للدخول
+    "login": "https://lottie.host/4b82d733-4050-4d51-aa3f-8df95cbdf356/M6q3s7Z0g2.json"
 }
 
 @st.cache_data(ttl=600)
 def load_lottieurl(url: str):
     try:
-        r = requests.get(url, timeout=3)
-        return r.json() if r.status_code == 200 else None
+        # زودنا التايم أوت شوية عشان السيرفرات البطيئة
+        r = requests.get(url, timeout=4)
+        if r.status_code != 200:
+            return None
+        return r.json()
     except:
         return None
 
@@ -44,7 +47,7 @@ def get_anim_by_order(order_text):
     elif any(x in text for x in ["اكل", "غدا", "ساندوتش", "food"]): url = ANIMATIONS["food"]
     return load_lottieurl(url)
 
-# 3. إدارة الملفات (طلبات + مستخدمين)
+# 3. إدارة الملفات (CSV)
 def load_csv(file_path, columns):
     if not os.path.exists(file_path):
         return pd.DataFrame(columns=columns)
@@ -58,7 +61,6 @@ def save_csv(df, file_path):
 
 def register_user(name, job, gender):
     df = load_csv(USERS_FILE, ["Name", "Job", "Gender", "JoinDate"])
-    # التأكد إن الاسم مش متكرر، لو متكرر نحدث بياناته
     if name in df["Name"].values:
         df.loc[df["Name"] == name, ["Job", "Gender"]] = [job, gender]
     else:
@@ -100,16 +102,11 @@ st.markdown("""
     }
     .big-font { font-size: 22px; font-weight: bold; color: #00ffcc; }
     .small-font { font-size: 14px; color: #ccc; }
-    /* تنسيق زر الدخول */
     div.stButton > button { width: 100%; background-color: #00ffcc; color: black; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------------------------------------------------
-# 5. منطق البرنامج (Login vs Main App)
-# ---------------------------------------------------------
-
-# التأكد من وجود مفتاح لتخزين بيانات المستخدم في الجلسة الحالية
+# 5. المنطق الرئيسي
 if "user_info" not in st.session_state:
     st.session_state["user_info"] = None
 
@@ -117,22 +114,27 @@ if "user_info" not in st.session_state:
 if st.session_state["user_info"] is None:
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st_lottie(load_lottieurl(ANIMATIONS["login"]), height=200, key="login_anim")
-        st.markdown("<h2 style='text-align: center;'>🔐 تسجيل دخول الموظفين</h2>", unsafe_allow_html=True)
+        # --- التعديل هنا: فحص الأنيميشن قبل عرضه ---
+        login_anim_data = load_lottieurl(ANIMATIONS["login"])
+        if login_anim_data:
+            st_lottie(login_anim_data, height=200, key="login_anim")
+        else:
+            # بديل لو الأنيميشن محملش
+            st.markdown("<h1 style='text-align: center; font-size: 80px;'>🔐</h1>", unsafe_allow_html=True)
+        # -------------------------------------------
+        
+        st.markdown("<h2 style='text-align: center;'>تسجيل دخول الموظفين</h2>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             name_in = st.text_input("الاسم بالكامل")
-            job_in = st.text_input("المسمى الوظيفي (Job Title)")
-            # الخيارات اللي طلبتها بالظبط
+            job_in = st.text_input("المسمى الوظيفي")
             gender_in = st.selectbox("النوع / الفئة", ["ذكر", "أنثى", "مهندس"])
             
             submit_login = st.form_submit_button("دخول للنظام 🚀")
             
             if submit_login:
                 if name_in and job_in:
-                    # حفظ البيانات في ملف المستخدمين
                     register_user(name_in, job_in, gender_in)
-                    # حفظ البيانات في الجلسة الحالية عشان يفضل فاكره
                     st.session_state["user_info"] = {
                         "name": name_in,
                         "job": job_in,
@@ -142,14 +144,12 @@ if st.session_state["user_info"] is None:
                     time.sleep(1)
                     st.rerun()
                 else:
-                    st.warning("دخل بياناتك كاملة يا هندسة!")
+                    st.warning("دخل بياناتك كاملة!")
 
-# == التطبيق الرئيسي (بعد الدخول) ==
+# == التطبيق الرئيسي ==
 else:
-    # استرجاع بيانات المستخدم المسجل
     user = st.session_state["user_info"]
     
-    # القائمة الجانبية
     with st.sidebar:
         st.markdown(f"### 👤 {user['name']}")
         st.caption(f"💼 {user['job']} | {user['gender']}")
@@ -161,7 +161,6 @@ else:
         st.markdown("---")
         st.markdown("### 📥 طلب جديد")
         with st.form("order_form", clear_on_submit=True):
-            # الاسم بيتاخد أوتوماتيك
             st.text_input("الاسم", value=user['name'], disabled=True)
             u_room = st.selectbox("المكان", ["المكتب الرئيسي", "غرفة الاجتماعات", "المكتب الجانبي", "الاستقبال"])
             u_order = st.text_input("عاوز تشرب/تاكل إيه؟")
@@ -173,7 +172,6 @@ else:
                     time.sleep(1)
                     st.rerun()
 
-    # واجهة عرض الطلبات
     st.title("⚡ LIVE OFFICE MONITOR")
     
     df = load_csv(DATA_FILE, ["Time", "Name", "Room", "Order", "Status"])
@@ -185,9 +183,13 @@ else:
             with col_content:
                 c_anim, c_txt = st.columns([1, 4])
                 with c_anim:
+                    # --- التعديل هنا أيضاً للحماية ---
                     anim = get_anim_by_order(row['Order'])
-                    if anim: st_lottie(anim, height=80, key=f"lottie_{idx}")
-                    else: st.markdown("## ☕")
+                    if anim: 
+                        st_lottie(anim, height=80, key=f"lottie_{idx}")
+                    else: 
+                        st.markdown("## ☕")
+                    # --------------------------------
                 with c_txt:
                     st.markdown(f"""
                     <div class="order-card">
@@ -204,6 +206,5 @@ else:
     else:
         st.info("مفيش طلبات حالياً.. الهدوء يعم المكان 🍃")
     
-    # التحديث التلقائي
     time.sleep(15)
     st.rerun()
